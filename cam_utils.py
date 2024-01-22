@@ -61,6 +61,36 @@ def orbit_camera(elevation, azimuth, radius=1, is_degree=True, target=None, open
     T[:3, 3] = campos
     return T
 
+#!/usr/bin/python3
+def depth_image_to_point_cloud(depth, scale, K, pose):
+    u = range(0, depth.shape[1])
+    v = range(0, depth.shape[0])
+
+    u, v = np.meshgrid(u, v)
+    u = u.astype(float)
+    v = v.astype(float)
+
+    Z = depth.astype(float) / scale
+    X = (u - K[0, 2]) * Z / K[0, 0]
+    Y = (v - K[1, 2]) * Z / K[1, 1]
+
+    X = np.ravel(X)
+    Y = np.ravel(Y)
+    Z = np.ravel(Z)
+
+    valid = Z > 0
+
+    X = X[valid]
+    Y = Y[valid]
+    Z = Z[valid]
+
+    position = np.vstack((X, Y, Z, np.ones(len(X))))
+    position = np.dot(pose, position)
+
+    points = np.transpose(np.vstack(position[0:3, :])).tolist()
+
+    return points
+
 
 class OrbitCamera:
     def __init__(self, W, H, r=2, fovy=60, near=0.01, far=100):

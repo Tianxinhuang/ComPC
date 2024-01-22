@@ -45,7 +45,7 @@ invert_bg_prob: 0.5
 
 ### GUI
 gui: False
-force_cuda_rast: False
+force_cuda_rast: True
 # GUI resolution
 H: 800
 W: 800

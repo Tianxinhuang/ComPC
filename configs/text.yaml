@@ -11,7 +11,7 @@ elevation: 0
 # reference image resolution
 ref_size: 256
 # density thresh for mesh extraction
-density_thresh: 1
+density_thresh: 1 
 
 ### Output
 outdir: logs
@@ -20,8 +20,10 @@ save_path: ???
 
 ### Training
 # guidance loss weights (0 to disable)
-lambda_sd: 1
+lambda_sd: 0.1
 mvdream: False
+raw_sd: False
+depth_sd: True
 lambda_zero123: 0
 # training batch size per iter
 batch_size: 1
@@ -44,7 +46,7 @@ invert_bg_prob: 0.5
 
 ### GUI
 gui: False
-force_cuda_rast: False
+force_cuda_rast: True
 # GUI resolution
 H: 800
 W: 800

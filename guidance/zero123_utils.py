@@ -116,6 +116,7 @@ class Zero123(nn.Module):
         # pred_rgb: tensor [1, 3, H, W] in [0, 1]
 
         batch_size = pred_rgb.shape[0]
+        #print(as_latent)
 
         if as_latent:
             latents = F.interpolate(pred_rgb, (32, 32), mode='bilinear', align_corners=False) * 2 - 1

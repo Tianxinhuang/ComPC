@@ -15,6 +15,18 @@ from gs_renderer import Renderer, MiniCam
 
 from grid_put import mipmap_linear_grid_put_2d
 from mesh import Mesh, safe_normalize
+from torchvision import utils as vutils
+
+import requests
+from PIL import Image
+from diffusers import StableDiffusionDepth2ImgPipeline
+
+#from transformers import pipeline
+from diffusers import StableDiffusionControlNetPipeline, ControlNetModel, UniPCMultistepScheduler
+#from PIL import Image
+#import numpy as np
+#import torch
+#from diffusers.utils import load_image
 
 class GUI:
     def __init__(self, opt):
@@ -61,6 +73,58 @@ class GUI:
         self.optimizer = None
         self.step = 0
         self.train_steps = 1  # steps per rendering loop
+
+        self.zsdir = '/data/txhuang/data/zscomplete_data'
+        self.posedir = os.path.join(self.zsdir, 'pose.npy')
+        self.plydir = os.path.join(self.zsdir, 'plyobjects')
+        self.name = 'cow_7'
+
+        self.pts_path = os.path.join(self.plydir, self.name+'.ply')
+        params = np.load(self.posedir, allow_pickle=True).item()[self.name]
+        #print(self.name)
+        #print(params.item()[self.name])
+        #assert False
+        self.intri = params['intrinsic']
+        self.extri = params['extrinsic']
+        self.angles = params['angles']
+        #TR = np.array([[1,0,0,0],
+        #      [0,-1,0,0],
+        #      [0,0,-1,0],
+        #       [0,0,0,1]]
+        #      )
+        #self.extri = np.dot(self.extri,TR) #
+        #self.extri = np.linalg.inv(self.extri) #c2w->w2c
+
+        controlnet = ControlNetModel.from_pretrained(
+        "lllyasviel/sd-controlnet-depth", torch_dtype=torch.float16)
+        #
+        self.pipe = StableDiffusionControlNetPipeline.from_pretrained(
+            "runwayml/stable-diffusion-v1-5", controlnet=controlnet, safety_checker=None, torch_dtype=torch.float16)
+        
+        self.pipe.scheduler = UniPCMultistepScheduler.from_config(self.pipe.scheduler.config)
+        self.pipe = self.pipe.to("cuda")
+        #self.pipe = StableDiffusionDepth2ImgPipeline.from_pretrained("stabilityai/stable-diffusion-2-depth",torch_dtype=torch.float16,).to("cuda")
+
+        #depth_estimator = pipeline('depth-estimation')
+
+        #image = load_image("https://huggingface.co/lllyasviel/sd-controlnet-depth/resolve/main/images/stormtrooper.png")
+        #
+        #image = depth_estimator(image)['depth']
+        #image = np.array(image)
+        #print(image.shape)
+        #image = image[:, :, None]
+        #image = np.concatenate([image, image, image], axis=2)
+        #print(image.shape)
+        #assert False
+        
+        # Remove if you do not have xformers installed
+        # see https://huggingface.co/docs/diffusers/v0.13.0/en/optimization/xformers#installing-xformers
+        # for installation instructions
+        #pipe.enable_xformers_memory_efficient_attention()
+        
+        #pipe.enable_model_cpu_offload()
+        #print(self.opt.input)
+        #assert False
         
         # load input data from cmdline
         if self.opt.input is not None:
@@ -77,7 +141,12 @@ class GUI:
             self.renderer.initialize(self.opt.load)            
         else:
             # initialize gaussians to a blob
-            self.renderer.initialize(num_pts=self.opt.num_pts)
+            #self.renderer.initialize(num_pts=self.opt.num_pts)
+            self.renderer.init2(path=self.pts_path)
+            #self.renderer.init2(path='/root/sfs/Data/zscomplete_data_model.ply', z123=True)
+            self.points = self.renderer.gaussians._xyz.detach()
+            #self.renderer.gaussians.save_ply('/root/sfs/Data/test.ply')
+            #assert False
 
         if self.gui:
             dpg.create_context()
@@ -114,19 +183,23 @@ class GUI:
         self.optimizer = self.renderer.gaussians.optimizer
 
         # default camera
-        pose = orbit_camera(self.opt.elevation, 0, self.opt.radius)
-        self.fixed_cam = MiniCam(
-            pose,
-            self.opt.ref_size,
-            self.opt.ref_size,
-            self.cam.fovy,
-            self.cam.fovx,
-            self.cam.near,
-            self.cam.far,
-        )
+        #pose = orbit_camera(self.opt.elevation, 0, self.opt.radius)
+        #self.fixed_cam = MiniCam(
+        #    pose,
+        #    self.opt.ref_size,
+        #    self.opt.ref_size,
+        #    self.cam.fovy,
+        #    self.cam.fovx,
+        #    self.cam.near,
+        #    self.cam.far,
+        #)
+        pose = orbit_camera(self.angles[0], self.angles[1], 1)
+        fov = 2*np.arctan(self.intri[0]/(2*self.intri[2]))/np.pi * 180
+        self.fixed_cam = MiniCam(pose, self.intri[0],self.intri[1], fov, fov, 0.01, 100)
 
         self.enable_sd = self.opt.lambda_sd > 0 and self.prompt != ""
         self.enable_zero123 = self.opt.lambda_zero123 > 0 and self.input_img is not None
+        #print(self.opt.depth_sd)
 
         # lazy load guidance model
         if self.guidance_sd is None and self.enable_sd:
@@ -135,11 +208,21 @@ class GUI:
                 from guidance.mvdream_utils import MVDream
                 self.guidance_sd = MVDream(self.device)
                 print(f"[INFO] loaded MVDream!")
-            else:
+            elif self.opt.raw_sd:
                 print(f"[INFO] loading SD...")
                 from guidance.sd_utils import StableDiffusion
                 self.guidance_sd = StableDiffusion(self.device)
                 print(f"[INFO] loaded SD!")
+            elif self.opt.depth_sd:
+                print(f"[INFO] loading SD...")
+                from guidance.dp_utils import StableDiffusion
+                self.guidance_sd = StableDiffusion(self.device)
+                print(f"[INFO] loaded SD!")
+            else:
+                print(f"[INFO] loading controlnet SD...")
+                from guidance.ct_utils import StableDiffusion
+                self.guidance_sd = StableDiffusion(self.device)
+                print(f"[INFO] loaded controlnet SD!")
 
         if self.guidance_zero123 is None and self.enable_zero123:
             print(f"[INFO] loading zero123...")
@@ -150,9 +233,11 @@ class GUI:
         # input image
         if self.input_img is not None:
             self.input_img_torch = torch.from_numpy(self.input_img).permute(2, 0, 1).unsqueeze(0).to(self.device)
+            self.input_img = self.input_img_torch
             self.input_img_torch = F.interpolate(self.input_img_torch, (self.opt.ref_size, self.opt.ref_size), mode="bilinear", align_corners=False)
 
             self.input_mask_torch = torch.from_numpy(self.input_mask).permute(2, 0, 1).unsqueeze(0).to(self.device)
+            self.input_mask = self.input_mask_torch
             self.input_mask_torch = F.interpolate(self.input_mask_torch, (self.opt.ref_size, self.opt.ref_size), mode="bilinear", align_corners=False)
 
         # prepare embeddings
@@ -163,6 +248,56 @@ class GUI:
 
             if self.enable_zero123:
                 self.guidance_zero123.get_img_embeds(self.input_img_torch)
+    import cv2
+
+    def depth2color(self, depth, mask):
+        depth = depth.squeeze().unsqueeze(-1)
+        mask  = mask.squeeze().unsqueeze(-1)
+        #print(mask.shape)
+        #assert False
+        #depth = (depth-depth.min())/(depth.max()-depth.min())
+        #maxdepth = (mask*depth).max()
+        #mindepth = (mask*depth+(1-mask)*torch.ones_like(mask)).min()
+        #depth = (depth-mindepth)/(maxdepth-mindepth) * mask
+        depth = 1- depth
+
+        maxcolor = torch.tensor([1,0,0], dtype=torch.float32, device="cuda").unsqueeze(0).unsqueeze(0)
+        mincolor = torch.tensor([0,1,0], dtype=torch.float32, device="cuda").unsqueeze(0).unsqueeze(0)
+        img = (maxcolor-mincolor).unsqueeze(0).unsqueeze(0)
+        img = (maxcolor-mincolor)*depth + mincolor
+        img = (mask * img).permute(2, 0, 1)
+        #print(depth.shape)
+        depth = depth*mask
+        #assert False
+        depth0 = depth.repeat(1,1,1)
+        #print(depth0.shape)
+        depth = depth.repeat(1,1,3).detach().cpu().numpy()
+        #depth0 = depth
+        #depth = np.where(depth>0, 1, 0)
+        #print(depth.shape)
+        depth = (depth*255).astype(np.uint8)
+        image = Image.fromarray(depth)
+        image.save('/data/txhuang/data/zscomplete_data/depth.png')
+        #url = "http://images.cocodataset.org/val2017/000000039769.jpg"
+        #init_image = Image.open(requests.get(url, stream=True).raw)
+        #print(depth.shape)
+        #img = self.pipe(prompt="Smooth 3D shape", image=depth.repeat(1,1,3).permute(2,0,1),depth_map = depth0.permute(2,0,1), strength=0.5).images[0]
+        #print(img)
+        #assert False
+        #img = self.pipe(prompt="", image=img,depth_map = depth0.permute(2,0,1), strength=0.5).images[0]
+        img = self.pipe("A smooth 3D shape", image, guess_mode=True,  num_inference_steps=5).images[0]
+        img.save('/data/txhuang/data/zscomplete_data/dptest.png')
+        assert False
+
+        #print(depth.shape)
+        #assert False
+        #im_depth = depth.detach().cpu().numpy()*255
+        #print(im_depth.max())
+        #assert False
+        #im_depth = im_depth.squeeze().unsqueeze(-1)
+        #im_color = cv2.applyColorMap(cv2.convertScaleAbs(im_depth, alpha=2), cv2.COLORMAP_JET)
+        #img = (mask*torch.tensor(im_color, dtype=torch.float32, device="cuda")).permute(2, 0, 1)
+        return img
 
     def train_step(self):
         starter = torch.cuda.Event(enable_timing=True)
@@ -183,14 +318,28 @@ class GUI:
             if self.input_img_torch is not None:
                 cur_cam = self.fixed_cam
                 out = self.renderer.render(cur_cam)
+                #print(out["image"].shape, self.input_img_torch.shape)
+                #assert False
 
                 # rgb loss
                 image = out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]
-                loss = loss + 10000 * step_ratio * F.mse_loss(image, self.input_img_torch)
+                #loss = loss + 10000 * step_ratio * F.mse_loss(image, self.input_img)#_torch)
+                loss = loss + 10000 * step_ratio * (image-self.input_img).abs().mean()#
 
                 # mask loss
                 mask = out["alpha"].unsqueeze(0) # [1, 1, H, W] in [0, 1]
-                loss = loss + 1000 * step_ratio * F.mse_loss(mask, self.input_mask_torch)
+                loss = loss + 10000 * step_ratio * F.mse_loss(mask, self.input_mask)#_torch)
+
+            #self.save_image(image, '/root/sfs/Data/render.jpg')
+            cur_cam = self.fixed_cam
+            out = self.renderer.render(cur_cam)
+            image = out["image"]
+            #img_depth = self.depth2color(out['depth'], out['alpha'])
+            #self.save_image(img_depth.unsqueeze(0), '/root/sfs/Data/render.jpg')
+            #assert False
+            #print(image.shape, img_depth.shape)
+            #assert False
+            #loss = loss + 10000 * (out["alpha"].unsqueeze(0)*(image-img_depth)).abs().mean()
 
             ### novel view (manual batch)
             render_resolution = 128 if step_ratio < 0.3 else (256 if step_ratio < 0.6 else 512)
@@ -212,16 +361,30 @@ class GUI:
                 hors.append(hor)
                 radii.append(radius)
 
-                pose = orbit_camera(self.opt.elevation + ver, hor, self.opt.radius + radius)
-                poses.append(pose)
+                if self.enable_zero123:
+                    #pose = orbit_camera(self.opt.elevation + ver, hor, self.opt.radius + radius)
+                    pose = orbit_camera(self.angles[0]+ver, self.angles[1]+hor, 1)
+                    #pose = np.dot(pose, np.array(self.extri, dtype=np.float32))
+                    poses.append(pose)
 
-                cur_cam = MiniCam(pose, render_resolution, render_resolution, self.cam.fovy, self.cam.fovx, self.cam.near, self.cam.far)
+                    fov = 2*np.arctan(self.intri[0]/(2*self.intri[2]))/np.pi * 180
+                    #cur_cam = MiniCam(pose, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
+                    cur_cam = MiniCam(pose, 64, 64, fov, fov, 0.01, 100)
+                    #cur_cam = MiniCam(pose, render_resolution, render_resolution, fov, fov, 0.01, 100)
+                    #cur_cam = MiniCam(pose, render_resolution, render_resolution, self.cam.fovy, self.cam.fovx, self.cam.near, self.cam.far)
+                else:
+                    pose = np.array(self.extri, dtype=np.float32) ##data camera pose by extrinsic
+                    poses.append(pose)
+                    fov = 2*np.arctan(self.intri[0]/(2*self.intri[2]))/np.pi * 180
+                    cur_cam = MiniCam(pose, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
 
                 bg_color = torch.tensor([1, 1, 1] if np.random.rand() > self.opt.invert_bg_prob else [0, 0, 0], dtype=torch.float32, device="cuda")
                 out = self.renderer.render(cur_cam, bg_color=bg_color)
 
                 image = out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]
+                #image = image * out['depth'].unsqueeze(1) 
                 images.append(image)
+                #print(self.renderer.gaussians._scaling)
 
                 # enable mvdream training
                 if self.opt.mvdream:
@@ -229,7 +392,8 @@ class GUI:
                         pose_i = orbit_camera(self.opt.elevation + ver, hor + 90 * view_i, self.opt.radius + radius)
                         poses.append(pose_i)
 
-                        cur_cam_i = MiniCam(pose_i, render_resolution, render_resolution, self.cam.fovy, self.cam.fovx, self.cam.near, self.cam.far)
+                        #cur_cam_i = MiniCam(pose_i, render_resolution, render_resolution, self.cam.fovy, self.cam.fovx, self.cam.near, self.cam.far)
+                        cur_cam_i = MiniCam(pose_i, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
 
                         # bg_color = torch.tensor([0.5, 0.5, 0.5], dtype=torch.float32, device="cuda")
                         out_i = self.renderer.render(cur_cam_i, bg_color=bg_color)
@@ -239,41 +403,88 @@ class GUI:
 
             images = torch.cat(images, dim=0)
             poses = torch.from_numpy(np.stack(poses, axis=0)).to(self.device)
+            scaling = self.renderer.gaussians.get_scaling
+            points = self.renderer.gaussians.extract_points()
+            #cd_loss = self.renderer.gaussians.chamfer(self.renderer.gaussians.get_xyz.unsqueeze(0).detach(), points.unsqueeze(0))
+            #fd_loss = 10000*self.renderer.gaussians.chamfer(self.points.unsqueeze(0), points.unsqueeze(0))
+            #print(scaling)
+            #assert False
+            #scale_loss = 100000*scaling.min(-1)[0].mean() #+ 100*scaling.mean()
+            #rp_loss = self.renderer.gaussians.get_repulsion_loss(self.renderer.gaussians.get_xyz.unsqueeze(0))
+            scale_loss = 5000*scaling.min(-1)[0].mean()
+            #rp_loss = self.renderer.gaussians.get_repulsion_loss(self.renderer.gaussians.get_xyz.unsqueeze(0))
+            opa_loss = 100*(self.renderer.gaussians.get_opacity).abs().mean()
 
-            # import kiui
+            #import kiui
             # print(hor, ver)
-            # kiui.vis.plot_image(images)
+            #kiui.vis.plot_image(images)
+            #print(self.renderer.gaussians._xyz)
 
             # guidance loss
             if self.enable_sd:
                 if self.opt.mvdream:
                     loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, poses, step_ratio=step_ratio if self.opt.anneal_timestep else None)
-                else:
+                elif self.opt.raw_sd:
                     loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, step_ratio=step_ratio if self.opt.anneal_timestep else None)
+                elif self.opt.depth_sd:
+                    #loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, step_ratio=step_ratio if self.opt.anneal_timestep else None)
+                    depth =  (1-out['depth']) * out['alpha']
+                    loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, depth.repeat(1,1,1).detach(),  step_ratio=step_ratio if self.opt.anneal_timestep else None)
+                else:
+                    depth =  (1-out['depth']) * out['alpha']
+                    loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, depth.repeat(3,1,1).detach(),  step_ratio=step_ratio if self.opt.anneal_timestep else None)
 
             if self.enable_zero123:
+                #print(self.opt.lambda_zero123)
+                #assert False
                 loss = loss + self.opt.lambda_zero123 * self.guidance_zero123.train_step(images, vers, hors, radii, step_ratio=step_ratio if self.opt.anneal_timestep else None)
+
+            loss += 1.0 * scale_loss #+ 10 * scaling.mean()
+            #loss += 1000 * rp_loss
+            loss += 1 * opa_loss
             
             # optimize step
             loss.backward()
             self.optimizer.step()
             self.optimizer.zero_grad()
+            #print(self.renderer.gaussians._rotation)
 
-            # densify and prune
-            if self.step >= self.opt.density_start_iter and self.step <= self.opt.density_end_iter:
-                viewspace_point_tensor, visibility_filter, radii = out["viewspace_points"], out["visibility_filter"], out["radii"]
-                self.renderer.gaussians.max_radii2D[visibility_filter] = torch.max(self.renderer.gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
-                self.renderer.gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+            #if self.step == 500:
+            #    self.enable_zero123=True
+            #    self.renderer.gaussians._xyz.requires_grad=True
+            #    self.renderer.gaussians._scaling.requires_grad=False
+            #    self.input_img_torch = images
+            #    #self.renderer.gaussians._xyz.requires_grad=False
 
-                if self.step % self.opt.densification_interval == 0:
-                    self.renderer.gaussians.densify_and_prune(self.opt.densify_grad_threshold, min_opacity=0.01, extent=4, max_screen_size=1)
-                
-                if self.step % self.opt.opacity_reset_interval == 0:
-                    self.renderer.gaussians.reset_opacity()
+
+            #self.save_image(images, '/root/sfs/Data/render.jpg')
+            #assert False
+
+            ## densify and prune
+            #if self.step >= self.opt.density_start_iter and self.step <= self.opt.density_end_iter:
+            #    viewspace_point_tensor, visibility_filter, radii = out["viewspace_points"], out["visibility_filter"], out["radii"]
+            #    self.renderer.gaussians.max_radii2D[visibility_filter] = torch.max(self.renderer.gaussians.max_radii2D[visibility_filter], radii[visibility_filter])
+            #    self.renderer.gaussians.add_densification_stats(viewspace_point_tensor, visibility_filter)
+
+            #    if self.step % self.opt.densification_interval == 0:
+            #        self.renderer.gaussians.densify_and_prune(self.opt.densify_grad_threshold, min_opacity=0.01, extent=4, max_screen_size=1)
+            #    self.renderer.gaussians._xyz.requires_grad=False
+            #    #print(self.renderer.gaussians._xyz.shape)
+            #    
+            #    if self.step % self.opt.opacity_reset_interval == 0:
+            #        self.renderer.gaussians.reset_opacity()
+            #print(self.renderer.gaussians._xyz.requires_grad)
+        #print(out['depth'].min(), out['depth'].max())
+        #assert False
+        #self.save_image(images*out['depth'].unsqueeze(1), '/root/sfs/Data/render.jpg')
+        self.save_image(images, '/data/txhuang/data/render.jpg')
+        #print(out['depth'].unsqueeze(-1).shape)
+        self.save_image(out['depth'].unsqueeze(1), '/data/txhuang/data/depth.jpg')
 
         ender.record()
         torch.cuda.synchronize()
         t = starter.elapsed_time(ender)
+        #print(scale_loss)
 
         self.need_update = True
 
@@ -386,6 +597,17 @@ class GUI:
             with open(file_prompt, "r") as f:
                 self.prompt = f.read().strip()
 
+    def save_image(self, input_tensor, filename):
+        """
+        :param input_tensor: tensor
+        :param filename:     """
+        assert (len(input_tensor.shape) == 4 and input_tensor.shape[0] == 1)
+        input_tensor = input_tensor.clone().detach()
+        input_tensor = input_tensor.to(torch.device('cpu'))
+
+        # input_tensor = unnormalize(input_tensor)
+        vutils.save_image(input_tensor, filename)
+
     @torch.no_grad()
     def save_model(self, mode='geo', texture_size=1024):
         os.makedirs(self.opt.outdir, exist_ok=True)
@@ -397,6 +619,7 @@ class GUI:
         elif mode == 'geo+tex':
             path = os.path.join(self.opt.outdir, self.opt.save_path + '_mesh.' + self.opt.mesh_format)
             mesh = self.renderer.gaussians.extract_mesh(path, self.opt.density_thresh)
+            #points = self.renderer.gaussians.extract_points()
 
             # perform texture extraction
             print(f"[INFO] unwrap uv...")
@@ -877,7 +1100,7 @@ class GUI:
             for i in tqdm.trange(iters):
                 self.train_step()
             # do a last prune
-            self.renderer.gaussians.prune(min_opacity=0.01, extent=1, max_screen_size=1)
+            #self.renderer.gaussians.prune(min_opacity=0.01, extent=1, max_screen_size=1)
         # save
         self.save_model(mode='model')
         self.save_model(mode='geo+tex')
@@ -900,3 +1123,4 @@ if __name__ == "__main__":
         gui.render()
     else:
         gui.train(opt.iters)
+        #gui.train(1000)
