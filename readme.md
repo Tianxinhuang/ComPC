@@ -1,4 +1,5 @@
-# Zscomplete
+# ComPC
 
-This repository contains the official implementation for Zero-shot Point Cloud Completion via 2D priors
-
+> ComPC: Completing a 3D Point Cloud with 2D Diffusion Priors
+> Tianxin Huang, Zhiwen Yan, Yuyang Zhao, Gim Hee Lee  
+> ICLR'25 
