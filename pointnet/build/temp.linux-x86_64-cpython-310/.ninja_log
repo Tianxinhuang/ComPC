@@ -1,0 +1,7 @@
+# ninja log v5
+2	16913	1702478242769656748	/root/sfs/zscomplete/dreamgaussian/pointnet2/build/temp.linux-x86_64-cpython-310/src/pointnet2_api.o	aa6ac40e6054f44b
+1	33601	1702478259457457971	/root/sfs/zscomplete/dreamgaussian/pointnet2/build/temp.linux-x86_64-cpython-310/src/ball_query_gpu.o	2c474926f5018d22
+1	33616	1702478259485457638	/root/sfs/zscomplete/dreamgaussian/pointnet2/build/temp.linux-x86_64-cpython-310/src/group_points_gpu.o	a27549ca8f3a591
+2	33824	1702478259689455207	/root/sfs/zscomplete/dreamgaussian/pointnet2/build/temp.linux-x86_64-cpython-310/src/interpolate_gpu.o	c9cbc8a3e7c3d23d
+3	34525	1702478260381446966	/root/sfs/zscomplete/dreamgaussian/pointnet2/build/temp.linux-x86_64-cpython-310/src/sampling_gpu.o	c81284fa743cbf41
+53	6967	1702478792603010262	/root/sfs/zscomplete/dreamgaussian/pointnet2/build/temp.linux-x86_64-cpython-310/src/group_points.o	bbabb87a8b98ecf7
