@@ -16,11 +16,11 @@ stable_zero123: True
 iters: 500
 # whether to linearly anneal timestep
 anneal_timestep: True
+batch_size: 1
 # training camera radius
 radius: 2
 # training camera fovy
-fovy: 75
-  #49.1 # align with zero123 rendering setting (ref: https://github.com/cvlab-columbia/zero123/blob/main/objaverse-rendering/scripts/blender_script.py#L61
+fovy: 75 # align with zero123 rendering setting (ref: https://github.com/cvlab-columbia/zero123/blob/main/objaverse-rendering/scripts/blender_script.py#L61
 # checkpoint to load for stage 1 (should be a ply file)
 load:
 # prob to invert background color during training (0 = always black, 1 = always white)

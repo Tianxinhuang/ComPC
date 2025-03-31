@@ -36,6 +36,11 @@ from models.fields import NPullNetwork
 import random
 import open3d as o3d
 
+def knn_point(group_size, point_cloud, query_cloud, transpose_mode=False):
+    knn_obj = KNN(k=group_size, transpose_mode=transpose_mode)
+    dist, idx = knn_obj(point_cloud, query_cloud)
+    return dist, idx
+
 def inverse_sigmoid(x):
     return torch.log(x/(1-x))
 
@@ -215,7 +220,30 @@ class GaussianModel:
     @property
     def get_scaling(self):
         return self.scaling_activation(self._scaling.mean())*torch.ones_like(self.get_xyz)
-    
+    def neighbor_dist(self, pred):
+        xyz = torch.cat([pred, self.raw_xyz],axis=0).unsqueeze(0)
+        #print(xyz.shape, pred.shape)
+        #assert False
+        pred = pred.unsqueeze(0)
+        _, idx = knn_point(2, xyz, pred, transpose_mode=True)
+        #print(idx.shape)
+        #assert False
+        idx = idx[:, :, 1:].to(torch.int32) # remove first one
+        idx = idx.contiguous() # B, N, nn
+
+        xyz = xyz.transpose(1, 2).contiguous() # B, 3, N
+        pred = pred.transpose(1, 2).contiguous()
+        grouped_points = pn2_utils.grouping_operation(xyz, idx) # (B, 3, N), (B, N, nn) => (B, 3, N, nn)
+        #print(grouped_points.shape)
+        #assert False
+
+        grouped_points = grouped_points - pred.unsqueeze(-1)
+        dist2 = torch.sum(grouped_points ** 2, dim=1)
+        #dist2 = torch.max(dist2, torch.tensor(1e-12).cuda())
+        dist = torch.sqrt(dist2).squeeze(0)
+        #print(dist.shape)
+        #assert False
+        return dist 
     
     @property
     def get_rotation(self):
@@ -1168,10 +1196,11 @@ class Renderer:
             cov3D_precomp = self.gaussians.get_covariance(scaling_modifier)
         else:
             if surf:
-                scales = 1*distCUDA2(torch.cat([means3D, self.gaussians.raw_xyz],dim=0))
-                #scales = 1*torch.clamp_min(distCUDA2(torch.cat([means3D],dim=0)), 0.0000001)
-                scales = scales.unsqueeze(-1)[:means3D.shape[0]]
-                scales = scales.sqrt() * torch.ones_like(means3D)
+                scales = self.gaussians.neighbor_dist(self.gaussians.get_xyz.detach())*torch.ones_like(self.gaussians.get_xyz)
+                #scales = 1*distCUDA2(torch.cat([means3D, self.gaussians.raw_xyz],dim=0))
+                ##scales = 1*torch.clamp_min(distCUDA2(torch.cat([means3D],dim=0)), 0.0000001)
+                #scales = scales.unsqueeze(-1)[:means3D.shape[0]]
+                #scales = scales.sqrt() * torch.ones_like(means3D)
             else:
                 scales = self.gaussians.get_scaling
             rotations = self.gaussians.get_rotation

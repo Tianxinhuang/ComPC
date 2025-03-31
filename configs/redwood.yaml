@@ -11,11 +11,12 @@ ref_size: 1024
 lambda_sd: 0
 mvdream: False
 lambda_zero123: 0.1
-stable_zero123: True
+stable_zero123: False
 # training iterations for stage 1
 iters: 500
 # whether to linearly anneal timestep
 anneal_timestep: True
+batch_size: 1
 # training camera radius
 radius: 2
 # training camera fovy
@@ -32,7 +33,7 @@ force_cuda_rast: True
 H: 1024
 W: 1024
 zfc_num: 1000
-pce_num: 5000
+pce_num: 10000
 ver_std: 30
 hor_std: 90 
 ver_mean: 60

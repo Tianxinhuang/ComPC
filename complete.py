@@ -210,8 +210,8 @@ class GUI:
             self.guidance_zero123 = Zero123(self.device)
             #print(f"[INFO] loaded zero123!")
             if self.opt.stable_zero123:
-                #self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/stable-zero123-diffusers')
-                self.guidance_zero123 = Zero123(self.device)
+                self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/stable-zero123-diffusers')
+                #self.guidance_zero123 = Zero123(self.device)
             else:
                 self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/zero123-xl-diffusers')
 
@@ -312,47 +312,122 @@ class GUI:
         depth = (1-depth)*mask
         depth = depth.permute(2,0,1)
         return depth.detach()
-
- 
+    
     def color_step(self):
+        starter = torch.cuda.Event(enable_timing=True)
+        ender = torch.cuda.Event(enable_timing=True)
+        starter.record()
+
         images=[]
+        ver, hor = 0.0,0.0
 
-        #for _ in range(self.train_steps):
+        for _ in range(self.train_steps):
 
-        #self.step = 1
-        #step_ratio = min(1, self.step / self.opt.iters)
+            self.step += 1
+            step_ratio = min(1, self.step / self.opt.iters)
 
-        ## update lr
-        #self.renderer.gaussians.update_learning_rate(self.step)
+            # update lr
+            self.renderer.gaussians.update_learning_rate(self.step)
 
-        loss = 0
+            loss = 0
 
-        cur_cam = self.fixed_cam
-        out = self.renderer.render(cur_cam)
-        image = out["image"]
-        self.image = image.detach()
-        depth = self.depth_process(out['depth'],  out['alpha'])
-        #loss = loss + 10000 * (out["alpha"].unsqueeze(0)*(image-self.image)).abs().mean()
+            cur_cam = self.fixed_cam
+            out = self.renderer.render(cur_cam)
+            image = out["image"]
+            if self.step == 1:
+                self.image = image.detach()
+            depth = self.depth_process(out['depth'],  out['alpha'])
+            loss = loss + 10000 * (out["alpha"].unsqueeze(0)*(image-self.image)).abs().mean()
 
-        #for _ in range(self.opt.batch_size):
+            ### novel view (manual batch)
+            #render_resolution = 128 if step_ratio < 0.3 else (256 if step_ratio < 0.6 else 512)
 
-        pose = orbit_camera(self.angles[0], self.angles[1], 1)
+            for _ in range(self.opt.batch_size):
 
-        fov = self.fov#
-        cur_cam = MiniCam(pose, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
+                #pose = np.array(self.extri, dtype=np.float32) ##data camera pose by extrinsic
+                pose = orbit_camera(self.angles[0]+ver, self.angles[1]+hor, 1)
 
-        bg_color = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
-        out = self.renderer.render(cur_cam, bg_color=bg_color)
+                #poses.append(pose)
+                fov = self.fov#2*np.arctan(self.intri[0]/(2*self.intri[2]))/np.pi * 180
+                cur_cam = MiniCam(pose, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
 
-        image = out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]
-        images.append(image)
+                if self.step > 4:
+                    bg_color = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
+                else:
+                    bg_color = torch.tensor([1, 1, 1] if np.random.rand() > self.opt.invert_bg_prob else [0, 0, 0], dtype=torch.float32, device="cuda")
+                out = self.renderer.render(cur_cam, bg_color=bg_color)
 
-        images = torch.cat(images, dim=0)
+                image = out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]
+                images.append(image)
 
+            images = torch.cat(images, dim=0)
+            scaling = self.renderer.gaussians.get_scaling
+            scale_loss = 3000*scaling.mean()
+            opa_loss = 100*(self.renderer.gaussians.get_opacity).abs().mean()
+
+            # guidance loss
+            if self.enable_sd:
+                if self.opt.raw_sd:
+                    loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, step_ratio=step_ratio if self.opt.anneal_timestep else None)
+                elif self.opt.depth_sd:
+                    depth = self.depth_process(out['depth'],  out['alpha'])
+                else:
+                    depth =  self.depth_process(out['depth'],  out['alpha'])#(out['depth'].max()-out['depth']) * out['alpha']
+
+            loss += 1.0 * scale_loss
+
+            # optimize step
+            loss.backward()
+            self.optimizer.step()
+            self.optimizer.zero_grad()
         self.save_image(images, self.zsdir+'/render.jpg')
         self.save_image(depth.unsqueeze(0), self.zsdir+'/depth.jpg')
 
+        ender.record()
         torch.cuda.synchronize()
+        t = starter.elapsed_time(ender)
+
+        self.need_update = True
+
+    #def color_step(self):
+    #    images=[]
+
+    #    #for _ in range(self.train_steps):
+
+    #    #self.step = 1
+    #    #step_ratio = min(1, self.step / self.opt.iters)
+
+    #    ## update lr
+    #    #self.renderer.gaussians.update_learning_rate(self.step)
+
+    #    loss = 0
+
+    #    cur_cam = self.fixed_cam
+    #    out = self.renderer.render(cur_cam)
+    #    image = out["image"]
+    #    self.image = image.detach()
+    #    depth = self.depth_process(out['depth'],  out['alpha'])
+    #    #loss = loss + 10000 * (out["alpha"].unsqueeze(0)*(image-self.image)).abs().mean()
+
+    #    #for _ in range(self.opt.batch_size):
+
+    #    pose = orbit_camera(self.angles[0], self.angles[1], 1)
+
+    #    fov = self.fov#
+    #    cur_cam = MiniCam(pose, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
+
+    #    bg_color = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
+    #    out = self.renderer.render(cur_cam, bg_color=bg_color)
+
+    #    image = out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]
+    #    images.append(image)
+
+    #    images = torch.cat(images, dim=0)
+
+    #    self.save_image(images, self.zsdir+'/render.jpg')
+    #    self.save_image(depth.unsqueeze(0), self.zsdir+'/depth.jpg')
+
+    #    torch.cuda.synchronize()
 
     #itera: iteration id
     def train_step(self, itera):
