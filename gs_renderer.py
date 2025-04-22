@@ -19,27 +19,22 @@ from mesh import Mesh
 from mesh_utils import decimate_mesh, clean_mesh
 
 import kiui
-#from chamfer_distance import ChamferDistance
-#from chamferdist import ChamferDistance
-import sys
-sys.path.append('ChamferDistancePytorch')
-import chamfer3D.dist_chamfer_3D
+import dist_chamfer_3D
 
-from knn_cuda import KNN
-#from pointnet2 import pointnet2_utils as pn2_utils
+#from knn_cuda import KNN
+#from pointnet2_ops import pointnet2_utils as pn2_utils
 import sys
-sys.path.append('pointnet2/pointnet2_ops_lib/pointnet2_ops')
-import pointnet2_utils as pn2_utils
 from pyhocon import ConfigFactory
 from models.fields import NPullNetwork
 
 import random
 import open3d as o3d
 
-def knn_point(group_size, point_cloud, query_cloud, transpose_mode=False):
-    knn_obj = KNN(k=group_size, transpose_mode=transpose_mode)
-    dist, idx = knn_obj(point_cloud, query_cloud)
-    return dist, idx
+#knn_obj = KNN(k=2, transpose_mode=True)
+#def knn_point(group_size, point_cloud, query_cloud, transpose_mode=False):
+#    knn_obj = KNN(k=group_size, transpose_mode=transpose_mode)
+#    dist, idx = knn_obj(point_cloud, query_cloud)
+#    return dist, idx
 
 def inverse_sigmoid(x):
     return torch.log(x/(1-x))
@@ -180,7 +175,7 @@ class GaussianModel:
         self.optimizer = None
         self.spatial_lr_scale = 0
         self.setup_functions()
-        self.chamfer_dist = chamfer3D.dist_chamfer_3D.chamfer_3DDist()#ChamferDistance()
+        self.chamfer_dist = dist_chamfer_3D.chamfer_3DDist()#ChamferDistance()
         self.sdf_network=None
 
     def capture(self):
@@ -220,31 +215,6 @@ class GaussianModel:
     @property
     def get_scaling(self):
         return self.scaling_activation(self._scaling.mean())*torch.ones_like(self.get_xyz)
-    def neighbor_dist(self, pred):
-        xyz = torch.cat([pred, self.raw_xyz],axis=0).unsqueeze(0)
-        #print(xyz.shape, pred.shape)
-        #assert False
-        pred = pred.unsqueeze(0)
-        _, idx = knn_point(2, xyz, pred, transpose_mode=True)
-        #print(idx.shape)
-        #assert False
-        idx = idx[:, :, 1:].to(torch.int32) # remove first one
-        idx = idx.contiguous() # B, N, nn
-
-        xyz = xyz.transpose(1, 2).contiguous() # B, 3, N
-        pred = pred.transpose(1, 2).contiguous()
-        grouped_points = pn2_utils.grouping_operation(xyz, idx) # (B, 3, N), (B, N, nn) => (B, 3, N, nn)
-        #print(grouped_points.shape)
-        #assert False
-
-        grouped_points = grouped_points - pred.unsqueeze(-1)
-        dist2 = torch.sum(grouped_points ** 2, dim=1)
-        #dist2 = torch.max(dist2, torch.tensor(1e-12).cuda())
-        dist = torch.sqrt(dist2).squeeze(0)
-        #print(dist.shape)
-        #assert False
-        return dist 
-    
     @property
     def get_rotation(self):
         return self.rotation_activation(self._rotation)
@@ -1021,7 +991,7 @@ class Renderer:
         return results
     
     #Estimate the normal from point clouds
-    def getnormal(self, data, pose):
+    def getnormal(self, data, pose, norm_normal=False):
         pcd = o3d.geometry.PointCloud()
         pcd.points = o3d.utility.Vector3dVector(data)
 
@@ -1031,12 +1001,13 @@ class Renderer:
         # Optionally orient the normals (assuming the sensor's viewpoint is known)
         pcd.orient_normals_towards_camera_location(camera_location=pose[:3,3])
         normal = np.array(pcd.normals)
-        normal = (normal+1)/2
+        if norm_normal:
+            normal = (normal+1)/2
         return np.array(pcd.points), normal
 
     #define the colors by normal maps 
-    def defcolor(self, pose):
-        points, normals = self.getnormal(np.array(self.pcd.points), pose)
+    def defcolor(self, pose, norm=False):
+        points, normals = self.getnormal(np.array(self.pcd.points), pose, norm)
         pcd = BasicPointCloud(
                 points=points, colors=normals, normals=np.zeros((normals.shape[0], 3)))
 
@@ -1132,6 +1103,21 @@ class Renderer:
         result = 0.5*(data-cen)/val
         return result, cen, val
 
+    def get_surf_scales(self):
+        try:
+            scales = self.gaussians.neighbor_dist(self.gaussians.get_xyz.detach())*torch.ones_like(self.gaussians.get_xyz)
+            torch.cuda.synchronize()
+            print(scales.sum())
+            return scales
+        except Exception as e:
+            torch.cuda.empty_cache()
+            means3D = self.gaussians.get_xyz.detach()
+            scales = 1*distCUDA2(torch.cat([means3D, self.gaussians.raw_xyz],dim=0))
+            #scales = 1*torch.clamp_min(distCUDA2(torch.cat([means3D],dim=0)), 0.0000001)
+            scales = scales.unsqueeze(-1)[:means3D.shape[0]]
+            scales = scales.sqrt() * torch.ones_like(means3D)
+            return scales
+
     def render(
         self,
         viewpoint_camera,
@@ -1196,11 +1182,9 @@ class Renderer:
             cov3D_precomp = self.gaussians.get_covariance(scaling_modifier)
         else:
             if surf:
-                scales = self.gaussians.neighbor_dist(self.gaussians.get_xyz.detach())*torch.ones_like(self.gaussians.get_xyz)
-                #scales = 1*distCUDA2(torch.cat([means3D, self.gaussians.raw_xyz],dim=0))
-                ##scales = 1*torch.clamp_min(distCUDA2(torch.cat([means3D],dim=0)), 0.0000001)
-                #scales = scales.unsqueeze(-1)[:means3D.shape[0]]
-                #scales = scales.sqrt() * torch.ones_like(means3D)
+                scales = 1*distCUDA2(torch.cat([means3D, self.gaussians.raw_xyz],dim=0))
+                scales = scales.unsqueeze(-1)[:means3D.shape[0]]
+                scales = scales.sqrt() * torch.ones_like(means3D)
             else:
                 scales = self.gaussians.get_scaling
             rotations = self.gaussians.get_rotation

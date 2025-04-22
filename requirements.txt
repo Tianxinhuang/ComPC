@@ -1,4 +1,5 @@
 absl-py==2.0.0
+Ninja
 accelerate @ git+https://github.com/huggingface/accelerate@4617be37602ba39780de7939fcc8475610614488
 addict==2.4.0
 aiofiles==23.2.1
@@ -17,14 +18,13 @@ beautifulsoup4==4.12.3
 blinker==1.7.0
 cachetools==5.3.2
 certifi==2023.11.17
-chamfer-3D @ file:///root/sfs/zscomplete/dreamgaussian/ChamferDistancePytorch/chamfer3D
-chamferdist==1.0.3
+git+https://github.com/AllenXiangX/SnowflakeNet.git@main#subdirectory=loss_functions/Chamfer3D
 charset-normalizer==3.3.2
 click==8.1.7
 colorama==0.4.6
 coloredlogs==15.0.1
 comm==0.2.1
-ConfigArgParse==1.7
+ConfigArgParse
 contourpy==1.2.0
 cycler==0.12.1
 dash==2.14.2
@@ -35,12 +35,11 @@ dataclasses-json==0.6.3
 dearpygui==1.7.1
 decorator==5.1.1
 Deprecated==1.2.14
-diff-gaussian-rasterization @ file:///root/sfs/zscomplete/dreamgaussian/diff-gaussian-rasterization
+./diff-gaussian-rasterization
 diffusers==0.21.4
 einops==0.7.0
 einops-exts==0.0.4
-emd==0.0.0
-emd-ext==0.0.0
+git+https://github.com/AllenXiangX/SnowflakeNet.git@main#subdirectory=loss_functions/emd
 exceptiongroup==1.2.0
 executing==2.0.1
 fastapi==0.104.1
@@ -67,7 +66,7 @@ httpcore==1.0.2
 httpx==0.25.2
 huggingface-hub==0.25.0
 humanfriendly==10.0
-hydra-core==0.11.3
+hydra-core
 idna==3.6
 imageio==2.33.0
 imageio-ffmpeg==0.4.9
@@ -86,7 +85,6 @@ jupyter_core==5.6.1
 jupyterlab-widgets==3.0.9
 kiui @ git+https://github.com/ashawkey/kiuikit@fa5a2058fecc1753a44bf87a5371e2b1b7a4ad94
 kiwisolver==1.4.5
-KNN-CUDA @ file:///root/sfs/zscomplete/dreamgaussian/KNN_CUDA
 lazy_loader==0.3
 llvmlite==0.41.1
 lmdb==1.4.1
@@ -124,7 +122,7 @@ nvidia-nvjitlink-cu12==12.3.101
 nvidia-nvtx-cu12==12.1.105
 oauthlib==3.2.2
 objprint==0.2.3
-omegaconf==2.3.0
+omegaconf
 onnxruntime==1.16.3
 onnxruntime-gpu==1.16.3
 open3d==0.16.0
@@ -140,8 +138,7 @@ Pillow==10.1.0
 platformdirs==4.1.0
 plotly==5.18.0
 plyfile==1.0.2
-pointnet2==0.0.0
-pointnet2-ops @ file:///root/sfs/zscomplete/dreamgaussian/pointnet2/pointnet2_ops_lib
+git+https://github.com/erikwijmans/Pointnet2_PyTorch.git
 pooch==1.8.0
 prompt-toolkit==3.0.43
 protobuf==3.20.3
@@ -182,7 +179,7 @@ scipy==1.11.4
 semantic-version==2.10.0
 sentencepiece==0.1.99
 shellingham==1.5.4
-simple-knn @ file:///root/sfs/zscomplete/dreamgaussian/simple-knn
+git+https://github.com/dreamgaussian/dreamgaussian.git@main#subdirectory=simple-knn
 six==1.16.0
 sniffio==1.3.0
 soupsieve==2.5

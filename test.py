@@ -24,6 +24,9 @@ def complete_one(workdir, indir, outdir, iname):
 
     ipath = os.path.join(indir, iname)
 
+    if not os.path.exists(workdir):
+        os.makedirs(workdir)
+
     gui = GUI(opt, workdir, indir, iname.split('.')[0])
     gui.train()
 

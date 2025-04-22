@@ -4,6 +4,8 @@
 > Tianxin Huang, Zhiwen Yan, Yuyang Zhao, Gim Hee Lee  
 > ICLR'25
 
+![intro](obj_quali.mp4)
+
 [My Personal Page :)](https://tianxinhuang.github.io/) | [Our Project Page :)](https://tianxinhuang.github.io/projects/ComPC)
 
 ## TODO List and ETA
@@ -29,27 +31,33 @@ and then activate it by (`conda activate deface`)
 conda install -c "nvidia/label/cuda-11.6.0" cuda
 ```
 
+In case that there is the error "fatal error: cusparse.h: No such file or directory":
+
+```
+conda install -c conda-forge cudatoolkit-dev
+```
+
+In case that there is the error "error: parameter packs not expanded with '...'":
+
+```
+apt install gcc-10 g++-10 -y
+export CC=/usr/bin/gcc-10
+export CXX=/usr/bin/g++-10
+```
+
 3. Install Torch by running:
 
 ```
 pip install torch==1.12.1+cu116 torchvision==0.13.1+cu116 torchaudio==0.12.1 --extra-index-url https://download.pytorch.org/whl/cu116
 ```
 
-4. Install (`simple-knn`), (`diff-gaussian-rasterization`), (`pointnet2`) by getting in their directories and compiling. Install [KNN_CUDA](https://github.com/unlimblue/KNN_CUDA) following its instruction.
-
-5. Install other packages by running: 
+4. Install other packages by running: 
 
 ```
 pip install -r requirements.txt
 ```
 
-6. Compile metrics by going to (`loss_functions/emd`) and (`loss_functions/Chamfer3D`) and run:
-
-```
-pip install .
-```
-
-7. Download the synthetic and redwood [data](https://drive.google.com/drive/folders/1Ce2xk6kpTkKG-vKbtcsEs2JiJTmdiYaD?usp=drive_link), and run the codes for completion.
+5. Download the synthetic and redwood [data](https://drive.google.com/drive/folders/1Ce2xk6kpTkKG-vKbtcsEs2JiJTmdiYaD?usp=drive_link), and run the codes for completion.
 
 ## How to Use
 

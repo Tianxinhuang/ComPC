@@ -210,10 +210,11 @@ class GUI:
             self.guidance_zero123 = Zero123(self.device)
             #print(f"[INFO] loaded zero123!")
             if self.opt.stable_zero123:
-                self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/stable-zero123-diffusers')
-                #self.guidance_zero123 = Zero123(self.device)
+                #self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/stable-zero123-diffusers')
+                self.guidance_zero123 = Zero123(self.device)
             else:
                 self.guidance_zero123 = Zero123(self.device, model_key='ashawkey/zero123-xl-diffusers')
+                #self.guidance_zero123 = Zero123(self.device)
 
         # input image
         if self.input_img is not None:
@@ -314,120 +315,44 @@ class GUI:
         return depth.detach()
     
     def color_step(self):
-        starter = torch.cuda.Event(enable_timing=True)
-        ender = torch.cuda.Event(enable_timing=True)
-        starter.record()
-
         images=[]
-        ver, hor = 0.0,0.0
 
-        for _ in range(self.train_steps):
+        #for _ in range(self.train_steps):
 
-            self.step += 1
-            step_ratio = min(1, self.step / self.opt.iters)
+        #self.step = 1
+        #step_ratio = min(1, self.step / self.opt.iters)
 
-            # update lr
-            self.renderer.gaussians.update_learning_rate(self.step)
+        ## update lr
+        #self.renderer.gaussians.update_learning_rate(self.step)
 
-            loss = 0
+        loss = 0
 
-            cur_cam = self.fixed_cam
-            out = self.renderer.render(cur_cam)
-            image = out["image"]
-            if self.step == 1:
-                self.image = image.detach()
-            depth = self.depth_process(out['depth'],  out['alpha'])
-            loss = loss + 10000 * (out["alpha"].unsqueeze(0)*(image-self.image)).abs().mean()
+        cur_cam = self.fixed_cam
+        out = self.renderer.render(cur_cam)
+        image = out["image"]
+        self.image = image.detach()
+        depth = self.depth_process(out['depth'],  out['alpha'])
+        #loss = loss + 10000 * (out["alpha"].unsqueeze(0)*(image-self.image)).abs().mean()
 
-            ### novel view (manual batch)
-            #render_resolution = 128 if step_ratio < 0.3 else (256 if step_ratio < 0.6 else 512)
+        #for _ in range(self.opt.batch_size):
 
-            for _ in range(self.opt.batch_size):
+        pose = orbit_camera(self.angles[0], self.angles[1], 1)
 
-                #pose = np.array(self.extri, dtype=np.float32) ##data camera pose by extrinsic
-                pose = orbit_camera(self.angles[0]+ver, self.angles[1]+hor, 1)
+        fov = self.fov#
+        cur_cam = MiniCam(pose, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
 
-                #poses.append(pose)
-                fov = self.fov#2*np.arctan(self.intri[0]/(2*self.intri[2]))/np.pi * 180
-                cur_cam = MiniCam(pose, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
+        bg_color = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
+        out = self.renderer.render(cur_cam, bg_color=bg_color)
 
-                if self.step > 4:
-                    bg_color = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
-                else:
-                    bg_color = torch.tensor([1, 1, 1] if np.random.rand() > self.opt.invert_bg_prob else [0, 0, 0], dtype=torch.float32, device="cuda")
-                out = self.renderer.render(cur_cam, bg_color=bg_color)
+        image = out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]
+        images.append(image)
 
-                image = out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]
-                images.append(image)
+        images = torch.cat(images, dim=0)
 
-            images = torch.cat(images, dim=0)
-            scaling = self.renderer.gaussians.get_scaling
-            scale_loss = 3000*scaling.mean()
-            opa_loss = 100*(self.renderer.gaussians.get_opacity).abs().mean()
-
-            # guidance loss
-            if self.enable_sd:
-                if self.opt.raw_sd:
-                    loss = loss + self.opt.lambda_sd * self.guidance_sd.train_step(images, step_ratio=step_ratio if self.opt.anneal_timestep else None)
-                elif self.opt.depth_sd:
-                    depth = self.depth_process(out['depth'],  out['alpha'])
-                else:
-                    depth =  self.depth_process(out['depth'],  out['alpha'])#(out['depth'].max()-out['depth']) * out['alpha']
-
-            loss += 1.0 * scale_loss
-
-            # optimize step
-            loss.backward()
-            self.optimizer.step()
-            self.optimizer.zero_grad()
         self.save_image(images, self.zsdir+'/render.jpg')
         self.save_image(depth.unsqueeze(0), self.zsdir+'/depth.jpg')
 
-        ender.record()
         torch.cuda.synchronize()
-        t = starter.elapsed_time(ender)
-
-        self.need_update = True
-
-    #def color_step(self):
-    #    images=[]
-
-    #    #for _ in range(self.train_steps):
-
-    #    #self.step = 1
-    #    #step_ratio = min(1, self.step / self.opt.iters)
-
-    #    ## update lr
-    #    #self.renderer.gaussians.update_learning_rate(self.step)
-
-    #    loss = 0
-
-    #    cur_cam = self.fixed_cam
-    #    out = self.renderer.render(cur_cam)
-    #    image = out["image"]
-    #    self.image = image.detach()
-    #    depth = self.depth_process(out['depth'],  out['alpha'])
-    #    #loss = loss + 10000 * (out["alpha"].unsqueeze(0)*(image-self.image)).abs().mean()
-
-    #    #for _ in range(self.opt.batch_size):
-
-    #    pose = orbit_camera(self.angles[0], self.angles[1], 1)
-
-    #    fov = self.fov#
-    #    cur_cam = MiniCam(pose, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
-
-    #    bg_color = torch.tensor([1, 1, 1], dtype=torch.float32, device="cuda")
-    #    out = self.renderer.render(cur_cam, bg_color=bg_color)
-
-    #    image = out["image"].unsqueeze(0) # [1, 3, H, W] in [0, 1]
-    #    images.append(image)
-
-    #    images = torch.cat(images, dim=0)
-
-    #    self.save_image(images, self.zsdir+'/render.jpg')
-    #    self.save_image(depth.unsqueeze(0), self.zsdir+'/depth.jpg')
-
-    #    torch.cuda.synchronize()
 
     #itera: iteration id
     def train_step(self, itera):
@@ -477,7 +402,7 @@ class GUI:
             points_list=[]
 
             vers = torch.linspace(-self.opt.ver_mean, self.opt.ver_mean, 4)
-            hors = torch.linspace(-self.opt.hor_mean, self.opt.hor_mean, 4)
+            hors = torch.linspace(-self.opt.hor_mean, self.opt.hor_mean, 5)[:4]
 
             verss, horss = torch.meshgrid(vers, hors)
             verss = verss.reshape([-1])
@@ -488,6 +413,7 @@ class GUI:
 
             vers = vers.cpu().numpy()
             hors = hors.cpu().numpy()
+
 
             for bs in range(16):
 
@@ -503,6 +429,7 @@ class GUI:
 
                 fov = self.fov
                 cur_cam = MiniCam(pose, self.intri[0], self.intri[1], fov, fov, 0.01, 100)
+                #cur_cam = MiniCam(pose, render_resolution, render_resolution, fov, fov, 0.01, 100)
 
                 bg_color = torch.tensor([1, 1, 1] if np.random.rand() > self.opt.invert_bg_prob else [0, 0, 0], dtype=torch.float32, device="cuda")
                 out = self.renderer.render(cur_cam, bg_color=bg_color, fractal=True)
@@ -531,7 +458,7 @@ class GUI:
 
             if (self.step+1) % self.opt.densification_interval == 0:
                 print('densify...')
-                self.renderer.gaussians.densify_and_prune(0.0, min_opacity=0.5, extent=4, N = self.densify_N, max_screen_size=1)
+                self.renderer.gaussians.densify_and_prune(0.0, min_opacity=0.5, extent=1, N = self.densify_N, max_screen_size=1)
 
         self.save_image(images[-1:], self.zsdir+'/render.jpg')
         torch.cuda.synchronize()
@@ -553,16 +480,17 @@ class GUI:
         points_coarse, grad_len, movelen = self.renderer.gaussians.drive_sample(samples_far)
 
         #Use SDF to drive near points
-        points_fine, _, _ = self.renderer.gaussians.drive_sample(samples_near)
+        points_fine, grad_len, _ = self.renderer.gaussians.drive_sample(samples_near)
 
         #Merge the driven results with the original points 
-        points_merge,_,_ = self.renderer.gaussians.drive_sample(points_coarse.detach())
+        points_merge,_,_ = self.renderer.gaussians.drive_sample(points_fine.detach())
         points_merge, _ = self.renderer.gaussians.merge(points_merge.detach(), self.renderer.gaussians.raw_xyz)
 
         #Get the final completed results at the end of iterations
         if itera == itere-1:
             points_coarse, grad_len, movelen = self.renderer.gaussians.drive_sample(grids)
             self.refined,_,_ = self.renderer.gaussians.drive_sample(points_coarse.detach())
+            #self.refined = points_coarse
             self.refined, movelen = self.renderer.gaussians.merge(self.refined, self.renderer.gaussians.raw_xyz)
 
         loss = 0
@@ -576,7 +504,7 @@ class GUI:
         cd_near = 1*self.renderer.gaussians.chamfer(points_fine.unsqueeze(0), self.surfpoints.unsqueeze(0))
         #L_{mer}
         cd_merge = 1*self.renderer.gaussians.chamfer(points_merge.unsqueeze(0), self.surfpoints.unsqueeze(0)) + 0.1*self.renderer.gaussians.sigma.square().mean()
-        loss = loss + 1 * cd_far +  1.0 * cd_near  + 1.0 * cd_merge + 0.0001*grad_loss 
+        loss = loss + 1 * cd_far +  1.0 * cd_near  + 1.0 * cd_merge + 0.00001*grad_loss 
 
         loss.backward()
         self.optimizer.step()
@@ -683,7 +611,7 @@ class GUI:
         self.pose_step()
 
         #Partial Gaussian Initialization
-        self.renderer.defcolor(self.extri)
+        self.renderer.defcolor(self.extri, opt.norm_normal)
         self.prepare_train()
         self.color_step()
         
@@ -696,14 +624,16 @@ class GUI:
     
         self.step = 0
 
-        #self.__init__(self.opt2, self.zsdir, self.plydir, self.name)
+        #self.__init__(self.opt, self.zsdir, self.plydir, self.name)
 
         #Load the processed image
         self.load_input(self.zsdir+'/render_rgba.png')
 
+        #self.prepare_train()
         #Load the colorized Gaussian primitives
         self.renderer.init2(path=path, scale_denom = self.opt.scale_denom, z123=True)
         self.prepare_train()
+        self.step = 0
 
         #Zero-shot-Fractal Completion
         for i in tqdm.trange(opt.zfc_num):

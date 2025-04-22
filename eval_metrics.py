@@ -4,7 +4,8 @@ import torch
 import argparse
 import open3d as o3d
 import numpy as np
-from loss_functions import chamfer_3DDist, emdModule
+from dist_chamfer_3D import chamfer_3DDist
+from emd_module import emdModule
 
 
 class Metrics:
@@ -48,12 +49,14 @@ def main():
     parser = argparse.ArgumentParser()
     parser.add_argument('--dataset', type=str, required=True, help='Dataset name')
     parser.add_argument('--resdir', type=str, required=True, help='Full path to a single method results directory')
+    parser.add_argument('--indir', type=str, required=True, help='Full path to the input data directory')
     parser.add_argument('--result_dir', type=str, required=True, help='Full path to output log file (e.g. ./logs/eval.txt)')
     args = parser.parse_args()
 
     dataset = args.dataset
     resdir = args.resdir
     result_file_path = args.result_dir
+    father_dir = args.indir
 
     # Extract method name from resdir path
     iname = os.path.basename(os.path.normpath(resdir))
@@ -66,7 +69,6 @@ def main():
     sys.stdout = open(result_file_path, 'w')
 
     metrics = Metrics()
-    father_dir = '/root/sfs/Data/zscomplete_data'
     gtdir = os.path.join(father_dir, dataset, 'gtdata')
 
     print(f"Evaluating method: {iname}")

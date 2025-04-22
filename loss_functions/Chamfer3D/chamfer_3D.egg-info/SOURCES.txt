@@ -1,9 +1,0 @@
-chamfer3D.cu
-chamfer_cuda.cpp
-setup.py
-/root/sfs/zscomplete/ComPC/loss_functions/Chamfer3D/chamfer3D.cu
-/root/sfs/zscomplete/ComPC/loss_functions/Chamfer3D/chamfer_cuda.cpp
-chamfer_3D.egg-info/PKG-INFO
-chamfer_3D.egg-info/SOURCES.txt
-chamfer_3D.egg-info/dependency_links.txt
-chamfer_3D.egg-info/top_level.txt

@@ -11,7 +11,7 @@ ref_size: 1024
 lambda_sd: 0
 mvdream: False
 lambda_zero123: 0.1
-stable_zero123: True
+stable_zero123: False
 # training iterations for stage 1
 iters: 500
 # whether to linearly anneal timestep
@@ -20,7 +20,7 @@ batch_size: 1
 # training camera radius
 radius: 2
 # training camera fovy
-fovy: 80 # align with zero123 rendering setting (ref: https://github.com/cvlab-columbia/zero123/blob/main/objaverse-rendering/scripts/blender_script.py#L61
+fovy: 75 # align with zero123 rendering setting (ref: https://github.com/cvlab-columbia/zero123/blob/main/objaverse-rendering/scripts/blender_script.py#L61
 # checkpoint to load for stage 1 (should be a ply file)
 load:
 # prob to invert background color during training (0 = always black, 1 = always white)
@@ -32,10 +32,10 @@ force_cuda_rast: True
 # GUI resolution
 H: 1024
 W: 1024
-zfc_num: 1000
+zfc_num: 1200
 pce_num: 10000
 ver_std: 15
-hor_std: 45 
+hor_std: 45
 ver_mean: 60
 hor_mean: 180
 scale_denom: 10.0
@@ -43,6 +43,7 @@ densify_N: 4
 pose_weight: 0.0008
 scale_weight: 100
 box_size: 1.3
+norm_normal: True
 
 ### Gaussian splatting
 sh_degree: 0
@@ -54,5 +55,5 @@ feature_lr: 0.01
 opacity_lr: 0.01
 scaling_lr: 0.01
 rotation_lr: 0.005
-densification_interval: 501
+densification_interval: 401
 densify_grad_threshold: 0
