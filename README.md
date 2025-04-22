@@ -4,7 +4,7 @@
 > Tianxin Huang, Zhiwen Yan, Yuyang Zhao, Gim Hee Lee  
 > ICLR'25
 
-![intro](obj_quali.mp4)
+![](intro.png)
 
 [My Personal Page :)](https://tianxinhuang.github.io/) | [Our Project Page :)](https://tianxinhuang.github.io/projects/ComPC)
 
