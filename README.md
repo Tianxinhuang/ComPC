@@ -69,7 +69,7 @@ python test.py --config your_config_yaml --workdir your_workdir_for_intermediate
 
 We have provided config files for our evaluation data in the (`configs`) dir. You can also adjust the hyper-parameters on your own. We believe that the performances can be further improved by adjusting the parameters.
 
-For example, if you want to conduct experiments on single images from Voxceleb2 downloaded in (`synthetic_redwood/synthetic`), the command to optimize would be:
+For example, if you want to conduct experiments on Redwood data downloaded in (`synthetic_redwood/synthetic`), the command to optimize would be:
 
 ```
 python test.py --config configs/synthetic.yaml --workdir workspace --indir synthetic_redwood --outdir result_dir --name synthetic
